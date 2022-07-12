@@ -3,9 +3,10 @@
 
 #include <stdio.h>
 
-#define BYTES 64
+extern "C" void cudaBeamWrapper(int *res, const int *first, const int *last, int n_bytes);
 
-__global__ void beamKernel(int *res, const int *a, const int *b, int size) {
+__global__ void beamKernel(int *res, const int *a, const int *b, int size)
+{
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < size)
     {
@@ -45,34 +46,36 @@ void cudaBeamWrapper(int *res, const int *first, const int *last, int n_bytes)
     cudaFree(dev_res);
     cudaFree(dev_first);
     cudaFree(dev_last);
-}
 
-
-
-int main(int argc, char **argv)
-{
-    const int arraySize = BYTES;
-    int res[arraySize] = {0};
-    int first[arraySize];
-    int last[arraySize];
-
-    // Inititate random values
-    int i;
-    for (i = 0; i < BYTES; i++)
-    {
-        first[i] = rand();
-    }
-    for (i = 0; i < BYTES; i++)
-    {
-        last[i] = rand();
-    }
-    
-    cudaBeamWrapper(res, first, last, arraySize);
-    int loop;
-    for (loop = 0; loop < BYTES; loop++)
-        printf("%d ", res[loop]);
-    printf("\n");
     cudaDeviceReset();
-
-    return 0;
 }
+
+
+
+// int main(int argc, char **argv)
+// {
+//     const int arraySize = BYTES;
+//     int res[arraySize] = {0};
+//     int first[arraySize];
+//     int last[arraySize];
+
+//     // Inititate random values
+//     int i;
+//     for (i = 0; i < BYTES; i++)
+//     {
+//         first[i] = rand();
+//     }
+//     for (i = 0; i < BYTES; i++)
+//     {
+//         last[i] = rand();
+//     }
+    
+//     cudaBeamWrapper(res, first, last, arraySize);
+//     int loop;
+//     for (loop = 0; loop < BYTES; loop++)
+//         printf("%d ", res[loop]);
+//     printf("\n");
+//     cudaDeviceReset();
+
+//     return 0;
+// }
