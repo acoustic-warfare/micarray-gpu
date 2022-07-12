@@ -43,7 +43,7 @@ Disable auto-init
 
     conda config --set auto_activate_base false
 
-Recreate an environment inside data-transfer
+Recreate an environment inside micarray-gpu
 
     conda env create -f environment.yml
 

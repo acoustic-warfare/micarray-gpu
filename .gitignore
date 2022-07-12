@@ -22,6 +22,10 @@
 *.la
 *.lo
 
+# Cache
+*cache
+*__pycache__
+
 # Shared objects (inc. Windows DLLs)
 *.dll
 *.so
