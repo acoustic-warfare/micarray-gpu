@@ -6,23 +6,34 @@ from Audio_data import Audio_data
 from Matrix_array import Matrix_array
 from Audio_source import Audio_source
 from Color_map import Color_map
+import config
 
 # GLOBAL VARIABLES
 c = 340                     # propagation speed of sound
 
 def antenna_setup():
-    r_a1 = [-0.08, 0, 0]
-    r_a2 = [0.08, 0, 0]
-    uni_distance = math.pow(10,-3) * 20
-    row_elements = 8
-    column_elements = 8
+    # r_a1, r_a2, r_a3, r_a4, uni_distance, row_elements, column_elements are user defined variables and can be in separate config file
+    r_a1 = config.r_a1      # coordinate position of origin of array1
+    r_a2 = config.r_a2      # coordinate position of origin of array2
+    r_a3 = config.r_a3      # coordinate position of origin of array3
+    r_a4 = config.r_a4      # coordinate position of origin of array4
+    uni_distance = config.distance
+    row_elements = config.rows
+    column_elements = config.columns
 
+    # array_matrix_1, array_matrix_2, array_matrix_3, array_matrix_4 below can be generated in parallell
     array_matrix_1 = Matrix_array(r_a1,uni_distance,row_elements,column_elements)
     array_matrix_2 = Matrix_array(r_a2,uni_distance,row_elements,column_elements)
+    array_matrix_3 = Matrix_array(r_a3,uni_distance,row_elements,column_elements)
+    array_matrix_4 = Matrix_array(r_a4,uni_distance,row_elements,column_elements)
+
+    # array_matrices contains the current active arrays that should be used (currently only array1 and array2)
     array_matrices = np.array([array_matrix_1, array_matrix_2], dtype=object)
 
+    # number of active sub_arrays, variable will be used in several for-loops etc.
     sub_arrays = len(array_matrices)
-    print(sub_arrays)
+
+    # PLOT, only for visualization of array geometry
     for array in range(sub_arrays):
         plt.title('Array setup')
         plt.scatter(array_matrices[array].get_r_prime()[0,:], array_matrices[array].get_r_prime()[1,:])
@@ -31,11 +42,13 @@ def antenna_setup():
 
 
 def generate_array_signals(matrix_array, sources, t):
+    # function that emulate signals for simulation
+
     r_prime = matrix_array.get_r_prime()
     Audio_signal = np.zeros((len(t), len(r_prime[0,:])))
 
     for sample in range(len(t)):
-        if (sample+1 in np.linspace(0,len(t),11)) or (sample == 0):
+        if (sample+1 in np.linspace(0,len(t),11)) or (sample == 0): # 
             print(sample+1)
         for mic in range(len(r_prime[0,:])):
             x_i = r_prime[0,mic]
@@ -64,19 +77,19 @@ def r_vec(theta,phi):
 
 def filtering(array_audio_signals, sub_arrays, frequency_bands, f_sampling, elements):
     audio_filtered_complete = np.zeros((sub_arrays, len(frequency_bands)), dtype=object)
+    filter_order = config.filter_order              # filter order
+    scale_factor = config.scale_factor              # scale factor, making filter bandwidth more narrow
 
     for array in range(sub_arrays):
         
         Audio_signal = array_audio_signals[array].get_audio_signals()
 
-        calibration_weights = load_calibration_weights(array, elements, len(frequency_bands))
+        calibration_weights = load_calibration_weights(array, elements, len(frequency_bands)) # calibration weights
 
         for freq_ind in range(len(frequency_bands)):
             # filter design for each band
-            filter_order = 200
             nu_0 = 2*frequency_bands[freq_ind]/f_sampling   # normalized frequency
-            scale_factor = 10000                            # scale factor, making filter bandwidth more narrow
-            cut_off = [nu_0 - nu_0/scale_factor, nu_0 + nu_0/scale_factor]
+            cut_off = [nu_0 - nu_0/scale_factor, nu_0 + nu_0/scale_factor]  # cut-off frequency of filter
 
             b = signal.firwin(filter_order, cut_off, window="hamming", pass_zero=False) # filter coefficients
             
@@ -139,7 +152,6 @@ def scanning(y_listen, x_listen, r_scan, frequency_bands, audio_filtered_complet
 
                 for array in range(sub_arrays):
                     # Use the filtered audio signals
-                    print(audio_filtered_complete.shape)
                     audio_temp_signals = audio_filtered_complete[array, freq_ind].get_audio_signals()
                     
                     # Adaptive configuration of the antanna array
@@ -300,15 +312,16 @@ def maximum_intensity(color_maps_complete, frequency_bands):
     
 def main():
     # Initialization
-    f_sampling = 1000           # sampling frequency in Hz
-    t_start = 0                 # start time of simulation 
-    t_end = 1                  # end time of simulation
-    t_total = t_end - t_start   # total simulation time
+    # f_sampling, t_start, t_end, away_distance are user defined variables and can be in separate config file
+    f_sampling = config.f_sampling                      # sampling frequency in Hz
+    t_start = config.t_start                            # start time of simulation 
+    t_end = config.t_end                                # end time of simulation
+    t_total = t_end - t_start                           # total simulation time
     t = np.linspace(t_start, t_end, t_total*f_sampling) # time vector
 
-    # Point audio source
-    away_distance = 700         # distance between the array and sources
+    away_distance = config.away_distance                # distance between the array and sources
 
+    # set up array antenna
     array_matrices = antenna_setup()
     sub_arrays = len(array_matrices)
     
@@ -324,14 +337,14 @@ def main():
         print('Audio signal for array '+str(array+1)+' generated')
     
     # BEAMFORMING values
-    x_res = 10                          # resolution in x
-    y_res = 10                          # resolution in y
+    x_res = config.x_res                # resolution in x
+    y_res = config.y_res                # resolution in y
     x_listen = np.linspace(-1,1,x_res)  # scanning window, x coordinates
     y_listen = np.linspace(-1,1,y_res)  # scanning window, y coordinates
-    r_scan = math.sqrt(2)                          # radius of our scanning window, r_scan² = x²+y²+z²
+    r_scan = math.sqrt(2)               # radius of our scanning window, r_scan² = x²+y²+z²
 
-    f_bands_N = 45                      # number of frequency bands
-    bandwidth = [100, f_sampling/2-f_sampling/100]             # bandwidth of incoming audio signal
+    f_bands_N = config.f_bands_N         # number of frequency bands
+    bandwidth = config.bandwidth         # bandwidth of incoming audio signal
     frequency_bands = np.linspace(bandwidth[0],bandwidth[1],f_bands_N) # vector holding center frequencies of all frequency bands
     samples = len(t)
 
