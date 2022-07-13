@@ -1,15 +1,36 @@
-import signal
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
+# File: micarray-gpu/src/antenna.py
+# Author: Irreq
+# Date: 11/07-2022
+
+import signal
 import config
 
+# Load Library
 if config.backend == "cpu":
     import numpy as xp
+    cubridge_lib = None
     if config.verbose:
         print("Will use CPU backend")
 elif config.backend == "gpu":
+    import ctypes
     import cupy as xp
     xp.cuda.runtime.setDevice(config.gpu_device)
     print("Will use GPU backend")
+    try:
+        cubridge_lib = ctypes.cdll.LoadLibrary(
+            config.path + "/build/cubridge.so")
+        # # B. Specify function signatures
+        # bridge_fcn = cubridge_lib.pythonCudaBridgeWrapper
+        # bridge_fcn.argtypes = [ctypes.c_int]
+
+        # # bridge_fcn(int(input("Size: ")))
+        # bridge_fcn(9)
+        print("Successfully loaded Cuda APIs")
+    except OSError:
+        raise OSError("Have you compiled the Cuda Libs? run make")
 else:
     exit("No backend has been defined")
 
@@ -20,10 +41,12 @@ arguments = {
     "r_a": list,
 }
 
+
 def test():
     import time
     print(time.time())
     time.sleep(1)
+
 
 class Antenna(object):
     """Main Antenna Class
@@ -33,6 +56,7 @@ class Antenna(object):
     
     """
     running = True
+
     def __init__(self, rows=8, columns=8, idx=None, distance=2e-2, r_a=[0.1, 0.0, 0.0], args=None, callback=None):
         self.rows = rows
         self.cols = columns
@@ -68,7 +92,8 @@ class Antenna(object):
         for tag in arguments:
             tmp = getattr(args, tag)
             try:
-                assert isinstance(tmp, arguments.get(tag)), 'Argument of wrong type!'
+                assert isinstance(tmp, arguments.get(
+                    tag)), 'Argument of wrong type!'
                 self.__dict__[tag] = tmp
             except AssertionError:
                 print(f"{tag} should be: {arguments.get(tag).__name__}")
