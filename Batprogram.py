@@ -1,4 +1,3 @@
-from cmath import sin
 import numpy as np
 import math
 import matplotlib.pyplot as plt
@@ -12,20 +11,22 @@ from Color_map import Color_map
 c = 340                     # propagation speed of sound
 
 def antenna_setup():
-    r_a1 = [0,0,0]
+    r_a1 = [-0.08, 0, 0]
+    r_a2 = [0.08, 0, 0]
     uni_distance = math.pow(10,-3) * 20
     row_elements = 8
     column_elements = 8
 
     array_matrix_1 = Matrix_array(r_a1,uni_distance,row_elements,column_elements)
-    array_matrices = np.array([array_matrix_1], dtype=object)
+    array_matrix_2 = Matrix_array(r_a2,uni_distance,row_elements,column_elements)
+    array_matrices = np.array([array_matrix_1, array_matrix_2], dtype=object)
 
     sub_arrays = len(array_matrices)
-
+    print(sub_arrays)
     for array in range(sub_arrays):
         plt.title('Array setup')
         plt.scatter(array_matrices[array].get_r_prime()[0,:], array_matrices[array].get_r_prime()[1,:])
-        
+    plt.show()
     return array_matrices
 
 
@@ -62,11 +63,13 @@ def r_vec(theta,phi):
     return r
 
 def filtering(array_audio_signals, sub_arrays, frequency_bands, f_sampling, elements):
-    for array in range(sub_arrays):
-        Audio_signal = array_audio_signals[array].get_audio_signals()
-        #elements = array_matrices[array].get_elements()
+    audio_filtered_complete = np.zeros((sub_arrays, len(frequency_bands)), dtype=object)
 
-        audio_filtered_complete = np.zeros((sub_arrays, len(frequency_bands)), dtype=object)
+    for array in range(sub_arrays):
+        
+        Audio_signal = array_audio_signals[array].get_audio_signals()
+
+        calibration_weights = load_calibration_weights(array, elements, len(frequency_bands))
 
         for freq_ind in range(len(frequency_bands)):
             # filter design for each band
@@ -80,7 +83,7 @@ def filtering(array_audio_signals, sub_arrays, frequency_bands, f_sampling, elem
             audio_temp = np.zeros((len(Audio_signal[:,0]),elements))
             for mic_ind in range(elements):
                 # apply filter on evert signal recorded from the elements
-                audio_temp[:,mic_ind] = signal.lfilter(b, 1.0, Audio_signal[:,mic_ind])
+                audio_temp[:,mic_ind] = calibration_weights[freq_ind,mic_ind] * signal.lfilter(b, 1.0, Audio_signal[:,mic_ind])
 
             audio_filtered_complete[array,freq_ind] = Audio_data(audio_temp)
 
@@ -98,6 +101,13 @@ def filtering(array_audio_signals, sub_arrays, frequency_bands, f_sampling, elem
 
         print('Filtering of signals completed.')
     return audio_filtered_complete
+
+def load_calibration_weights(array, elements, f_bands):
+    # placeholder function, to be completed later
+    # function should load calibration weights form file
+    # returns matrix with calibration weightsfor all microphones, at all calibration frequencies
+    weights = np.ones((f_bands,elements))
+    return weights
 
 def scanning(y_listen, x_listen, r_scan, frequency_bands, audio_filtered_complete, array_matrices, f_sampling, sub_arrays):
     # Scans in the xy-plane for sources
@@ -129,6 +139,7 @@ def scanning(y_listen, x_listen, r_scan, frequency_bands, audio_filtered_complet
 
                 for array in range(sub_arrays):
                     # Use the filtered audio signals
+                    print(audio_filtered_complete.shape)
                     audio_temp_signals = audio_filtered_complete[array, freq_ind].get_audio_signals()
                     
                     # Adaptive configuration of the antanna array
@@ -168,7 +179,6 @@ def adaptive_array_config(matrix_array, frequency):
     else:
         mode = 7
     
-
     weight = np.zeros((1,row_elements*column_elements))
     row_lim = math.ceil(row_elements/mode)
     column_lim = math.ceil(column_elements/mode)
@@ -260,7 +270,7 @@ def validation_check(y_listen, x_listen, sources, r_scan):
             xy_val_check[y_ind, x_ind] = temp_val
 
     plt.figure(3)
-    plt.imshow(xy_val_check, extent= extents(x_listen) + extents(y_listen))
+    plt.imshow(xy_val_check, extent= extents(x_listen) + extents(y_listen), origin='lower')
     plt.title('Actual location of sources')
 
 def show_beamforming_results(y_listen, x_listen, frequency_bands, color_maps):
@@ -269,12 +279,12 @@ def show_beamforming_results(y_listen, x_listen, frequency_bands, color_maps):
     for freq_ind in range(len(frequency_bands)):
         color_map_intensity += color_maps[freq_ind].get_color_data_matrix()
     plt.figure(4)
-    plt.imshow(color_map_intensity, extent= extents(x_listen) + extents(y_listen))
+    plt.imshow(color_map_intensity, extent= extents(x_listen) + extents(y_listen), origin='lower')
     plt.title('Beamforming results')
     return color_map_intensity
 
 def extents(f):
-    # function to show images with correct grid values (with plt.imshow()), corresponding to our scanning window
+    # function to show images with correct axis values (with plt.imshow()), corresponding to our scanning window
     delta = f[1]-f[0]
     return [f[0] - delta/2, f[-1] + delta/2]
 
@@ -288,7 +298,6 @@ def maximum_intensity(color_maps_complete, frequency_bands):
     return max_intensity
     
     
-
 def main():
     # Initialization
     f_sampling = 1000           # sampling frequency in Hz
@@ -303,7 +312,6 @@ def main():
     array_matrices = antenna_setup()
     sub_arrays = len(array_matrices)
     
-  
     sources = np.array([Audio_source(300, 400, 20, 20, 140, away_distance, 0, 1.5)])
 
     # GENERATE AUDIO SIGNALS
@@ -326,11 +334,9 @@ def main():
     bandwidth = [100, f_sampling/2-f_sampling/100]             # bandwidth of incoming audio signal
     frequency_bands = np.linspace(bandwidth[0],bandwidth[1],f_bands_N) # vector holding center frequencies of all frequency bands
     samples = len(t)
-    #filter_coefficients = np.zeros((f_bands_N, filter_order+1)) # might only be used for plots
 
     # FILTERING
-    audio_filtered_complete = filtering(array_audio_signals, sub_arrays, frequency_bands, f_sampling, array_matrices[array].get_elements())
-    #audio_filtered_complete = filtering(array_audio_signals, sub_arrays, frequency_bands, f_sampling,elements)
+    audio_filtered_complete = filtering(array_audio_signals, sub_arrays, frequency_bands, f_sampling, array_matrices[0].get_elements())
 
     # start scanning after sources, at all different angles
     intensity_maps = scanning(y_listen, x_listen, r_scan, frequency_bands, audio_filtered_complete, array_matrices, f_sampling, sub_arrays)
@@ -343,6 +349,10 @@ def main():
 
     # calculate total intensity at all frequencies, and show results of beamforming
     total_intensity = show_beamforming_results(y_listen, x_listen, frequency_bands, intensity_maps)
+
+    # show all plots
+    plt.show()
+
 
 
 main()
