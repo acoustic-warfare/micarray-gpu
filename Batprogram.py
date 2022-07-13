@@ -345,5 +345,4 @@ def main():
     total_intensity = show_beamforming_results(y_listen, x_listen, frequency_bands, intensity_maps)
 
 
-
 main()
