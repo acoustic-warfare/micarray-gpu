@@ -2,7 +2,26 @@
 f_sampling = 1000           # sampling frequency in Hz
 t_start = 0                 # start time of simulation 
 t_end = 1                   # end time of simulation
+
+# Source variables
 away_distance = 700         # distance between the array and sources
+# source1
+f_start1 = 300              # lowest frequency that the source emitts
+f_end1 = 350                # highest frequency that the source emitts
+f_res1 = 20                 # resolution of frequency
+theta_deg1 = 20             # theta angel of source placement, relative to origin of array
+phi_deg1 = 40              # phi angel of source placement, relative to origin of array
+t_start1 = 0                # start time of emission
+t_end1 = 1.5                # end time of emission
+
+# source1
+f_start2 = 300              # lowest frequency that the source emitts
+f_end2 = 350                # highest frequency that the source emitts
+f_res2 = 20                 # resolution of frequency
+theta_deg2 = -20             # theta angel of source placement, relative to origin of array
+phi_deg2 = 40              # phi angel of source placement, relative to origin of array
+t_start2 = 0                # start time of emission
+t_end2 = 1.5                # end time of emission
 
 # Antenna array setup variables
 r_a1 = [-0.08, 0, 0]        # coordinate position of origin of array1

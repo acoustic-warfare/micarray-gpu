@@ -90,9 +90,7 @@ def filtering(array_audio_signals, sub_arrays, frequency_bands, f_sampling, elem
             # filter design for each band
             nu_0 = 2*frequency_bands[freq_ind]/f_sampling   # normalized frequency
             cut_off = [nu_0 - nu_0/scale_factor, nu_0 + nu_0/scale_factor]  # cut-off frequency of filter
-
             b = signal.firwin(filter_order, cut_off, window="hamming", pass_zero=False) # filter coefficients
-            
             audio_temp = np.zeros((len(Audio_signal[:,0]),elements))
             for mic_ind in range(elements):
                 # apply filter on evert signal recorded from the elements
@@ -312,55 +310,62 @@ def maximum_intensity(color_maps_complete, frequency_bands):
     
 def main():
     # Initialization
-    # f_sampling, t_start, t_end, away_distance are user defined variables and can be in separate config file
+    # f_sampling, t_start, t_end, away_distance are user defined variables
     f_sampling = config.f_sampling                      # sampling frequency in Hz
     t_start = config.t_start                            # start time of simulation 
     t_end = config.t_end                                # end time of simulation
     t_total = t_end - t_start                           # total simulation time
     t = np.linspace(t_start, t_end, t_total*f_sampling) # time vector
 
-    away_distance = config.away_distance                # distance between the array and sources
-
-    # set up array antenna
+    # Set up array antenna
     array_matrices = antenna_setup()
     sub_arrays = len(array_matrices)
     
-    sources = np.array([Audio_source(300, 400, 20, 20, 140, away_distance, 0, 1.5)])
+    # Create and place out sources
+    # source1 and source2 below can be generated in parallell
+    source1 = Audio_source(config.f_start1, config.f_end1, config.f_res1, \
+        config.theta_deg1, config.phi_deg1, config.away_distance, config.t_start1, config.t_end1)
+    source2 = Audio_source(config.f_start2, config.f_end2, config.f_res2, \
+        config.theta_deg2, config.phi_deg2, config.away_distance, config.t_start2, config.t_end2)
+    sources = np.array([source1, source2])
 
-    # GENERATE AUDIO SIGNALS
+    # GENERATE AUDIO SIGNAL
+    # will only be used to emulate data, this will not be used when the algoritm runs with real data
     array_audio_signals = np.zeros((sub_arrays), dtype=object)
     print('Number of samples generated (of '+str(f_sampling*t_total)+'):')
-    for array in range(sub_arrays):
+    for array in range(sub_arrays): # PARALLELL
         # generate the audio signals on each array-element for each sub-array
         temp_signal = generate_array_signals(array_matrices[array],sources,t)
         array_audio_signals[array] = Audio_data(temp_signal)
         print('Audio signal for array '+str(array+1)+' generated')
     
-    # BEAMFORMING values
-    x_res = config.x_res                # resolution in x
-    y_res = config.y_res                # resolution in y
+    # --- SIGNAL PROCESSING/BEAMFORMING ON SIGNALS STARTS HERE ---
+    x_res = config.x_res                # resolution in x of scanning window
+    y_res = config.y_res                # resolution in y of scanning window
     x_listen = np.linspace(-1,1,x_res)  # scanning window, x coordinates
     y_listen = np.linspace(-1,1,y_res)  # scanning window, y coordinates
     r_scan = math.sqrt(2)               # radius of our scanning window, r_scan² = x²+y²+z²
 
-    f_bands_N = config.f_bands_N         # number of frequency bands
-    bandwidth = config.bandwidth         # bandwidth of incoming audio signal
+    f_bands_N = config.f_bands_N        # number of frequency bands
+    bandwidth = config.bandwidth        # bandwidth of incoming audio signal
     frequency_bands = np.linspace(bandwidth[0],bandwidth[1],f_bands_N) # vector holding center frequencies of all frequency bands
     samples = len(t)
 
     # FILTERING
     audio_filtered_complete = filtering(array_audio_signals, sub_arrays, frequency_bands, f_sampling, array_matrices[0].get_elements())
 
-    # start scanning after sources, at all different angles
+    # SCANNING, start scanning after sources, at all different angles
     intensity_maps = scanning(y_listen, x_listen, r_scan, frequency_bands, audio_filtered_complete, array_matrices, f_sampling, sub_arrays)
 
-    # Check where the source is actually located
+    # VALIDATION CHECK, check where the source is actually located
     validation_check(y_listen, x_listen, sources, r_scan)
 
     # calculate maximum obtained intensity
+    # not sure if this will be used in the final signal processing algorithm
     max_intensity = maximum_intensity(intensity_maps, frequency_bands)
 
-    # calculate total intensity at all frequencies, and show results of beamforming
+    # "HEAT MAP"
+    # calculate total intensity at all frequencies, and show results of beamforming (as a heat map)
     total_intensity = show_beamforming_results(y_listen, x_listen, frequency_bands, intensity_maps)
 
     # show all plots
