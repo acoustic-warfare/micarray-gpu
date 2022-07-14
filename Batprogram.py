@@ -115,59 +115,130 @@ def filtering(array_audio_signals, sub_arrays, frequency_bands, f_sampling, elem
 
 def load_calibration_weights(array, elements, f_bands):
     # placeholder function, to be completed later
-    # function should load calibration weights form file
-    # returns matrix with calibration weightsfor all microphones, at all calibration frequencies
+    # function should load calibration weights from file
+    # returns matrix with calibration weights for all microphones, at all calibration frequencies
+    # this can stored in a config file
     weights = np.ones((f_bands,elements))
     return weights
 
-def scanning(y_listen, x_listen, r_scan, frequency_bands, audio_filtered_complete, array_matrices, f_sampling, sub_arrays):
-    # Scans in the xy-plane for sources
-    # returns vector, where each element represents the intensity of beamforming (at each frequency) at coordinate points defined by y_listen and x_listen
-    # 
-    #                           f1          f2       ...      fN
-    # color_maps_complete = [color_map1  color_map2  ...  color_mapN]
-    #
-    # color_mapN = matrix(y_listen, x_listen), with an intensity value at each coordinate
 
+def scanning(y_listen, x_listen, r_scan, frequency_bands, audio_filtered_complete, array_matrices, f_sampling, sub_arrays):
+    # Scans for audio sources over the choosen scanning window, defined by y_listen, x_listen and r_scan
+
+    # Initialize vector color_maps_complete, where all calculated color maps should be stored
+    #   each element in color_maps_complete corresponds to a matrix color_map_new at a specific frequency
+    #   each element in the matrix color_maps_new is a relative power value (color) in a specific direction
     color_maps_complete = np.zeros(len(frequency_bands), dtype=object)
     for freq_ind in range(len(frequency_bands)):
         color_map_new = np.zeros((len(y_listen),len(x_listen)))
         color_maps_complete[freq_ind] = Color_map(color_map_new)
+    
+    # To find audio sources, one needs to obtain the realtive power in a number of directions (coordinates)
+    # number of directions = x_res*y_res
+    # The directions are independent, so the signal processing in each direction can be done in parallell (the two following for-loops)
     for x_ind in range(len(x_listen)):
-        print('\n x_ind: '+str(x_ind+1))
-        x = x_listen[x_ind]
-        print('\t y_ind:', end=' ')
+        print('\n x_ind: '+str(x_ind+1))                # print stuff for user
+        x = x_listen[x_ind]                             # current x-coordinate
+        print('\t y_ind:', end=' ')                     # print stuff for user
         for y_ind in range(len(y_listen)):
-            print(str(y_ind+1), end=' ')
-            y = y_listen[y_ind]
+            print(str(y_ind+1), end=' ')                # print stuff for user
+            y = y_listen[y_ind]                         # current y-coordinate
             z_0 = math.sqrt(r_scan**2 - x**2 - y**2)
             theta = math.acos(z_0/r_scan)               # get theta from our x,y coordinates
             phi = math.atan2(y,x)                       # get phi from our x,y coordinates
+
+            # The beam forming is performed independently in every frequency band, this can be done in parallell
             for freq_ind in range(len(frequency_bands)):
-                # apply beamforming algo. in every frequency band
-                frequency = frequency_bands[freq_ind]
-                mic_data = 0                            #create empty mic data
-
-                for array in range(sub_arrays):
-                    # Use the filtered audio signals
-                    audio_temp_signals = audio_filtered_complete[array, freq_ind].get_audio_signals()
-                    
-                    # Adaptive configuration of the antanna array
-                    adaptive_weight = adaptive_array_config(array_matrices[array], frequency)
-
-                    # Perform the beamforming algoritm (phase-shift input signal according to listening direction)
-                    mic_data = mic_data + beam_forming_algorithm(array_matrices[array],[theta,phi],adaptive_weight, audio_temp_signals, frequency, f_sampling)
+                # apply beamforming algo. in every frequency band 
+                # Perform the beamforming algoritm (phase-shift input signal according to listening direction of theta and phi)
+                mic_data = beam_forming_algorithm(audio_filtered_complete, array_matrices, theta, phi, frequency_bands[freq_ind], freq_ind, f_sampling)
                 
-                # obtain relative power in the listening direction
+                # obtain relative power (color) in the listening direction [theta, phi] at the frequency f=frequency_bands[freq_ind]
                 color = sum(abs(mic_data)**2)
 
-                # relative power inte the direction [theta, phi] saved in matrix
+                # MIMO, save relative power (color) inte the direction [theta, phi] at frequency in matrix
                 color_maps_complete[freq_ind].set_color(y_ind, x_ind, color)
     return color_maps_complete
+
+def listening(audio_filtered_complete, array_matrices, theta_listen, phi_listen, frequency_bands, f_sampling):
+    samples = len(audio_filtered_complete[0, 0].get_audio_signals()[:,0]) # amount of samples of the audio tracks
+    audio_out = np.zeros((samples))         # initializing vector holding the audio output signal
+
+    theta_rad = theta_listen*math.pi/180    # convert listening angle from degrees in radians
+    phi_rad = phi_listen*math.pi/180        # convert listening angle from degrees in radians
+
+    for freq_ind in range(len(frequency_bands)):
+        # apply beamforming algo. in every frequency band 
+        # Perform the beamforming algoritm (phase-shift input signal according to listening direction of theta and phi)
+        mic_signal = beam_forming_algorithm(audio_filtered_complete, array_matrices, theta_rad, phi_rad, frequency_bands[freq_ind], freq_ind, f_sampling)
+
+        # MISO, summation of all mic_signals to one
+        audio_out += mic_signal
+
+    # scale audio signal
+    audio_out = audio_out/max(audio_out)
+    return audio_out
+
+def beam_forming_algorithm(audio_filtered_complete, array_matrices, theta, phi, frequency, freq_ind, f_sampling):
+    #
+    #   IMPORTANT! The beamforming algorithm assumes the array matrices lies in the xy-plane
+    #
+    #   The beamforming algorithm calculates the necessary phase to introduce to the narrowband signal
+    #   in order to have the maximum directivity in the direction r(theta,phi)
+    #
+    #   This phase-shift is introduced by a phase shifting function, which acts as a filter in time domain.
+    #
+    #   To improve performance, all elements of the array matrices are not in use. The user decides which 
+    #   element to use by sending in a weight vectir as a argument. The output signal is then normalized after
+    #   how many elements where in use.
+
+    samples = len(audio_filtered_complete[0, 0].get_audio_signals()[:,0])  # amount of samples of the audio tracks
+    array_data = np.zeros((samples,1))
+
+    for array in range(len(array_matrices)):
+        # Use the filtered audio signals
+        audio_temp_signals = audio_filtered_complete[array, freq_ind].get_audio_signals()
+
+        #   The r_prime vector of the matrix array to know the location of every element, as well as how many 
+        #   elements exists.
+        r_prime = array_matrices[array].get_r_prime()
+        elements = array_matrices[array].get_elements()
+
+        #   The narrowband wavevnumber
+        k = 2*math.pi*frequency/c
+
+        #   The normalized frequency
+        ny = frequency/f_sampling
+
+        #   Initialize output vector
+        mic_data = np.zeros((samples,1))
+
+        #   The compensation factors to obtain uniform phase in the direction r_hat(theta,phi)
+        x_factor = math.sin(theta)*math.cos(phi)
+        y_factor = math.sin(theta)*math.sin(phi)
+        
+        # Adaptive configuration of the antanna array
+        adaptive_weight = adaptive_array_config(array_matrices[array], frequency)
+
+        for mic_ind in range(elements):
+            #   calculate the narrowband phase-shift
+            phase_shift_value = -k*(r_prime[0,mic_ind] * x_factor + r_prime[1,mic_ind]*y_factor)
+
+            #   Sum the individually shifted data from the atnenna elements as well as weight them with
+            #   appropriate weight.
+            mic_data += adaptive_weight[0,mic_ind] * phase_shift(audio_temp_signals[:,mic_ind],ny,phase_shift_value)
+
+        norm_coeff = 1/sum(adaptive_weight[0])
+        mic_data = mic_data * norm_coeff
+
+        array_data += mic_data
+
+    return array_data
 
 def adaptive_array_config(matrix_array, frequency):
     # Adaptive configuration of the antanna array
     # Selects only necessary antenna-elements to maintain small beamwidth
+    # this can stored in a config file
 
     row_elements = matrix_array.get_row_elements()
     column_elements = matrix_array.get_row_elements()
@@ -199,58 +270,9 @@ def adaptive_array_config(matrix_array, frequency):
     return weight
 
 
-def beam_forming_algorithm(matrix_array,direction,weight,audio_signal,frequency,sampling_frequency):
-    #
-    #   IMPORTANT! The beamforming algorithm assumes the array matrices lies in the xy-plane
-    #
-    #   The beamforming algorithm calculates the necessary phase to introduce to the narrowband signal
-    #   in order to have the maximum directivity in the direction r(theta,phi)
-    #
-    #   This phase-shift is introduced by a phase shifting function, which acts as a filter in time domain.
-    #
-    #   To improve performance, all elements of the array matrices are not in use. The user decides which 
-    #   element to use by sending in a weight vectir as a argument. The output signal is then normalized after
-    #   how many elements where in use.
-
-    #   Get the amount of samples of the audio tracks 
-    samples = len(audio_signal[:,0])
-
-    #   The listening-direction vector contains two scalar values, theta and phi
-    theta = direction[0]
-    phi = direction[1]
-
-    #   The r_prime vector of the matrix array to know the location of every element, as well as how many 
-    #   elements exists.
-    r_prime = matrix_array.get_r_prime()
-    elements = matrix_array.get_elements()
-
-    #   The narrowband wavevnumber
-    k = 2*math.pi*frequency/c
-
-    #   The normalized frequency
-    ny = frequency/sampling_frequency
-
-    #   Initialize output vector
-    mic_data = np.zeros((samples,1))
-
-    #   The compensation factors to obtain uniform phase in the direction r_hat(theta,phi)
-    x_factor = math.sin(theta)*math.cos(phi)
-    y_factor = math.sin(theta)*math.sin(phi)
-
-    for mic_ind in range(elements):
-        #   calculate the narrowband phase-shift
-        phase_shift_value = -k*(r_prime[0,mic_ind] * x_factor + r_prime[1,mic_ind]*y_factor)
-
-        #   Sum the individually shifted data from the atnenna elements as well as weight them with
-        #   appropriate weight.
-        mic_data = mic_data + weight[0,mic_ind] * phase_shift(audio_signal[:,mic_ind],ny,phase_shift_value)
-
-    norm_coeff = 1/sum(weight[0])
-    mic_data = mic_data * norm_coeff
-
-    return mic_data
-
 def phase_shift(x,ny,phase):
+    # Phase shifts the input signal
+    #
     #   Input signal x
     #
     #   Output signal y
